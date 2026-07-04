@@ -10,8 +10,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
-        name: 'Anshika — AI Companion',
-        short_name: 'Anshika',
+  name: 'Fintly Companion',
+  short_name: 'Fintly',
         description: 'A calm, present AI companion to talk to whenever you need.',
         theme_color: '#F5F3EC',
         background_color: '#F5F3EC',
