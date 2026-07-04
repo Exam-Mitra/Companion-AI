@@ -1,4 +1,5 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import Onboarding from './pages/Onboarding.jsx';
 import Chat from './pages/Chat.jsx';
 import Companions from './pages/Companions.jsx';
@@ -12,7 +13,20 @@ function HomeRedirect() {
   return <Navigate to={c ? `/chat/${c.id}` : '/onboarding'} replace />;
 }
 
+function usePageTracking() {
+  const location = useLocation();
+  useEffect(() => {
+    if (typeof window.gtag === 'function') {
+      window.gtag('event', 'page_view', {
+        page_path: location.pathname,
+        page_location: window.location.href,
+      });
+    }
+  }, [location]);
+}
+
 export default function App() {
+  usePageTracking();
   return (
     <Routes>
       <Route path="/" element={<HomeRedirect />} />
