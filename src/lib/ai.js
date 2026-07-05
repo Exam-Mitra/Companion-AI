@@ -1,9 +1,9 @@
 // Talks to our serverless /api/chat endpoint (Groq, free tier) when deployed.
 // Falls back to a lightweight local responder so the app still works
-// during local development or if the API key hasn't been configured yet.
+// during local development, offline, or if the API key hasn't been configured yet.
 
 function localFallback({ name, relationship, traits }, history, userText) {
-  const t = userText.toLowerCase();
+  const t = (userText || '').toLowerCase();
   const openers = [
     `*settles in, giving you their full attention* `,
     `*soft smile* `,
@@ -27,7 +27,8 @@ function localFallback({ name, relationship, traits }, history, userText) {
   return `${opener}I hear you. Tell me more about that — I'm listening, and I'm not going anywhere.`;
 }
 
-export async function getCompanionReply(companion, history, userText) {
+// Non-streaming call (used as a fallback if streaming isn't supported/fails).
+export async function getCompanionReply(companion, history, userText, opts = {}) {
   try {
     const res = await fetch('/api/chat', {
       method: 'POST',
@@ -36,8 +37,11 @@ export async function getCompanionReply(companion, history, userText) {
         name: companion.name,
         relationship: companion.relationship,
         traits: companion.traits,
+        memory: companion.memory,
         history: history.slice(-12).map((m) => ({ role: m.role, content: m.text })),
         message: userText,
+        stream: false,
+        ...opts,
       }),
     });
     if (!res.ok) throw new Error('bad response');
@@ -45,13 +49,85 @@ export async function getCompanionReply(companion, history, userText) {
     if (data && data.reply) return data.reply;
     throw new Error('no reply');
   } catch (e) {
-    // No backend configured yet (e.g. running purely static, or offline) — use local fallback.
     return localFallback(companion, history, userText);
   }
 }
 
+// Streaming call — invokes onToken(chunk) as text arrives, resolves with the full text at the end.
+// If streaming fails for any reason (network, older backend, etc.), it transparently falls back
+// to the non-streaming call (and finally to the local offline responder).
+export async function streamCompanionReply(companion, history, userText, { onToken, imageBase64 } = {}) {
+  if (!navigator.onLine) {
+    const text = localFallback(companion, history, userText);
+    if (onToken) onToken(text);
+    return text;
+  }
+
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: companion.name,
+        relationship: companion.relationship,
+        traits: companion.traits,
+        memory: companion.memory,
+        history: history.slice(-12).map((m) => ({ role: m.role, content: m.text })),
+        message: userText,
+        stream: true,
+        imageBase64,
+      }),
+    });
+
+    if (!res.ok || !res.body) throw new Error('bad response');
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let fullText = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data:')) continue;
+        const payload = trimmed.slice(5).trim();
+        if (payload === '[DONE]') continue;
+        try {
+          const json = JSON.parse(payload);
+          if (json.error) throw new Error(json.error);
+          if (typeof json.token === 'string') {
+            fullText += json.token;
+            if (onToken) onToken(fullText);
+          }
+        } catch {
+          // ignore malformed partial lines
+        }
+      }
+    }
+
+    if (!fullText.trim()) throw new Error('empty stream');
+    return fullText;
+  } catch (e) {
+    // Streaming failed — fall back to a normal request, then to the offline responder.
+    const text = await getCompanionReply(companion, history, userText, { imageBase64 });
+    if (onToken) onToken(text);
+    return text;
+  }
+}
+
 // Browser-native, 100% free text-to-speech (no API key, no cost).
-export function speak(text) {
+export function getAvailableVoices() {
+  if (!('speechSynthesis' in window)) return [];
+  return window.speechSynthesis.getVoices();
+}
+
+export function speak(text, voiceName) {
   if (!('speechSynthesis' in window)) return;
   const clean = text.replace(/\*[^*]*\*/g, '').trim();
   if (!clean) return;
@@ -60,7 +136,9 @@ export function speak(text) {
   utter.rate = 0.98;
   utter.pitch = 1.05;
   const voices = window.speechSynthesis.getVoices();
-  const preferred = voices.find((v) => /female|samantha|victoria|zira/i.test(v.name)) || voices[0];
+  let preferred = null;
+  if (voiceName) preferred = voices.find((v) => v.name === voiceName);
+  if (!preferred) preferred = voices.find((v) => /female|samantha|victoria|zira/i.test(v.name)) || voices[0];
   if (preferred) utter.voice = preferred;
   window.speechSynthesis.speak(utter);
 }
