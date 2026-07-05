@@ -30,7 +30,19 @@ export default function Chat() {
   const [companion, setCompanion] = useState(null);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
   const scrollRef = useRef(null);
+
+  useEffect(() => {
+    const goOnline = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
+  }, []);
 
   useEffect(() => {
     const c = getCompanion(id);
@@ -69,6 +81,16 @@ export default function Chat() {
 
   return (
     <div className="app-screen" style={{ paddingBottom: 84 }}>
+            {!isOnline && (
+        <div style={{
+          background: '#F3E9DC', color: '#8A6A3A', fontSize: 13, textAlign: 'center',
+          padding: '8px 16px', borderBottom: '1px solid #E4D3B8',
+        }}>
+          You're offline — replies are basic until you're back online.
+        </div>
+      )}
+
+      {/* Header */}
       {/* Header */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 12, padding: '18px 20px 14px',
