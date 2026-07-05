@@ -5,7 +5,8 @@ import Chat from './pages/Chat.jsx';
 import Companions from './pages/Companions.jsx';
 import CompanionDetail from './pages/CompanionDetail.jsx';
 import Journal from './pages/Journal.jsx';
-import { getActiveCompanion, isOnboarded } from './lib/storage.js';
+import Settings from './pages/Settings.jsx';
+import { getActiveCompanion, getSettings, isOnboarded } from './lib/storage.js';
 
 function HomeRedirect() {
   if (!isOnboarded()) return <Navigate to="/onboarding" replace />;
@@ -25,8 +26,24 @@ function usePageTracking() {
   }, [location]);
 }
 
+function useAppliedTheme() {
+  useEffect(() => {
+    const settings = getSettings();
+    document.documentElement.setAttribute('data-theme', settings.theme || 'light');
+
+    const onSettingsChange = () => {
+      const s = getSettings();
+      document.documentElement.setAttribute('data-theme', s.theme || 'light');
+    };
+    window.addEventListener('aic:settings-changed', onSettingsChange);
+    return () => window.removeEventListener('aic:settings-changed', onSettingsChange);
+  }, []);
+}
+
 export default function App() {
   usePageTracking();
+  useAppliedTheme();
+
   return (
     <Routes>
       <Route path="/" element={<HomeRedirect />} />
@@ -35,6 +52,7 @@ export default function App() {
       <Route path="/companions" element={<Companions />} />
       <Route path="/companions/:id" element={<CompanionDetail />} />
       <Route path="/journal" element={<Journal />} />
+      <Route path="/settings" element={<Settings />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
