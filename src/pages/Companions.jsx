@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import BottomNav from '../components/BottomNav.jsx';
-import { getCompanions, setActiveCompanion } from '../lib/storage.js';
+import Avatar from '../components/Avatar.jsx';
+import { getCompanions } from '../lib/storage.js';
 
 export default function Companions() {
   const navigate = useNavigate();
@@ -37,14 +38,7 @@ export default function Companions() {
               borderRadius: 'var(--radius-md)', padding: '16px 18px',
             }}
           >
-            <div style={{
-              width: 48, height: 48, borderRadius: '50%', background: '#fff',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <span style={{ fontFamily: 'var(--font-serif)', fontSize: 20, color: 'var(--sage-dark)' }}>
-                {c.name[0]?.toUpperCase()}
-              </span>
-            </div>
+            <Avatar companion={c} size={48} />
             <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontWeight: 600, fontSize: 16.5 }}>{c.name}</span>
