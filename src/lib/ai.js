@@ -121,13 +121,14 @@ export async function streamCompanionReply(companion, history, userText, { onTok
   }
 }
 
-// Browser-native, 100% free text-to-speech (no API key, no cost).
+// Browser-native, 100% free text-to-speech (no API key, no cost). Used automatically
+// as a fallback if the realistic ElevenLabs voice (below) isn't configured or fails.
 export function getAvailableVoices() {
   if (!('speechSynthesis' in window)) return [];
   return window.speechSynthesis.getVoices();
 }
 
-export function speak(text, voiceName) {
+function speakWithBrowserVoice(text, voiceName) {
   if (!('speechSynthesis' in window)) return;
   const clean = text.replace(/\*[^*]*\*/g, '').trim();
   if (!clean) return;
@@ -141,4 +142,40 @@ export function speak(text, voiceName) {
   if (!preferred) preferred = voices.find((v) => /female|samantha|victoria|zira/i.test(v.name)) || voices[0];
   if (preferred) utter.voice = preferred;
   window.speechSynthesis.speak(utter);
+}
+
+let currentRealisticAudio = null;
+
+// Tries a realistic Indian voice via ElevenLabs (server-side, free tier) first.
+// Automatically falls back to the browser's built-in voice if that's not configured,
+// the quota is exhausted, or the request fails for any reason — the app never breaks.
+export async function speak(text, voiceName) {
+  const clean = (text || '').replace(/\*[^*]*\*/g, '').trim();
+  if (!clean) return;
+
+  // Stop anything currently playing.
+  if (currentRealisticAudio) {
+    currentRealisticAudio.pause();
+    currentRealisticAudio = null;
+  }
+  if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+
+  try {
+    const res = await fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: clean }),
+    });
+    if (!res.ok) throw new Error('bad response');
+    const data = await res.json();
+    if (data && data.audio) {
+      currentRealisticAudio = new Audio(data.audio);
+      await currentRealisticAudio.play();
+      return;
+    }
+    throw new Error('no audio');
+  } catch (e) {
+    // Realistic voice unavailable — use the free browser voice instead.
+    speakWithBrowserVoice(clean, voiceName);
+  }
 }
