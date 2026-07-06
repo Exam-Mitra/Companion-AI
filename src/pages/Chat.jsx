@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import BottomNav from '../components/BottomNav.jsx';
 import Avatar from '../components/Avatar.jsx';
-import { addMessage, getCompanion, getSettings, uid, updateLastMessage, patchLastMessage, updateMemory } from '../lib/storage.js';
+import { addMessage, getCompanion, getSettings, uid, patchLastMessage, updateMemory } from '../lib/storage.js';
 import { streamCompanionReply, speak } from '../lib/ai.js';
 import { maybeUpdateMemory } from '../lib/memory.js';
+import { createRecorder, isRecordingSupported, transcribeAudio } from '../lib/voice.js';
 
 const SpeakerIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ink-soft)" strokeWidth="1.6">
@@ -21,6 +22,14 @@ const ImageIcon = () => (
   </svg>
 );
 
+const MicIcon = ({ active }) => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={active ? 'var(--danger)' : 'var(--ink-soft)'} strokeWidth="1.6">
+    <rect x="9" y="2" width="6" height="12" rx="3" />
+    <path d="M5 10v1a7 7 0 0 0 14 0v-1" />
+    <line x1="12" y1="19" x2="12" y2="22" />
+  </svg>
+);
+
 function formatTime(ts) {
   if (!ts) return '';
   const d = new Date(ts);
@@ -33,7 +42,6 @@ function vibrate(ms) {
   }
 }
 
-// Tiny, dependency-free "pop" sound using the Web Audio API — no asset files needed.
 let audioCtx = null;
 function playTone(freq = 440, duration = 0.05, volume = 0.03) {
   try {
@@ -51,6 +59,47 @@ function playTone(freq = 440, duration = 0.05, volume = 0.03) {
   } catch {}
 }
 
+function AudioBubble({ src }) {
+  const audioRef = useRef(null);
+  const [playing, setPlaying] = useState(false);
+
+  const toggle = () => {
+    if (!audioRef.current) return;
+    if (playing) {
+      audioRef.current.pause();
+    } else {
+      audioRef.current.play();
+    }
+  };
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <audio
+        ref={audioRef}
+        src={src}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => setPlaying(false)}
+        style={{ display: 'none' }}
+      />
+      <button
+        onClick={toggle}
+        style={{
+          width: 30, height: 30, borderRadius: '50%', background: 'var(--sage-pale)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        }}
+      >
+        {playing ? (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="var(--sage-dark)"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>
+        ) : (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="var(--sage-dark)"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+        )}
+      </button>
+      <span style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>Voice message</span>
+    </div>
+  );
+}
+
 export default function Chat() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -59,8 +108,11 @@ export default function Chat() {
   const [sending, setSending] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [pendingImage, setPendingImage] = useState(null);
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
   const scrollRef = useRef(null);
   const fileInputRef = useRef(null);
+  const recorderRef = useRef(null);
   const settings = getSettings();
 
   useEffect(() => {
@@ -97,14 +149,16 @@ export default function Chat() {
     e.target.value = '';
   };
 
-  const send = async () => {
-    const text = input.trim();
-    const image = pendingImage;
-    if ((!text && !image) || sending) return;
+  const sendMessage = async ({ text, image, audio }) => {
+    if ((!text && !image && !audio) || sending) return;
     setInput('');
     setPendingImage(null);
 
-    const userMsg = { id: uid(), role: 'user', text: text || '(sent a photo)', image, ts: Date.now() };
+    const userMsg = {
+      id: uid(), role: 'user',
+      text: text || (audio ? '(voice message)' : '(sent a photo)'),
+      image, audio, ts: Date.now(),
+    };
     addMessage(companion.id, userMsg);
     const updated = getCompanion(companion.id);
     setCompanion({ ...updated });
@@ -112,7 +166,6 @@ export default function Chat() {
     playTone(520, 0.04, 0.025);
     setSending(true);
 
-    // Placeholder assistant message that fills in as tokens stream.
     const botMsgId = uid();
     addMessage(companion.id, { id: botMsgId, role: 'assistant', text: '', ts: Date.now(), streaming: true });
     setCompanion({ ...getCompanion(companion.id) });
@@ -121,28 +174,59 @@ export default function Chat() {
       const fullReply = await streamCompanionReply(companion, updated.messages, text, {
         imageBase64: image,
         onToken: (partial) => {
-          updateLastMessage(companion.id, partial);
+          patchLastMessage(companion.id, { text: partial });
           setCompanion({ ...getCompanion(companion.id) });
         },
       });
 
-      // finalize message (remove streaming flag)
-      const finalList = getCompanion(companion.id);
-      const lastMsg = finalList.messages[finalList.messages.length - 1];
-      if (lastMsg) { lastMsg.streaming = false; lastMsg.text = fullReply; }
-      //       patchLastMessage(companion.id, { text: fullReply, streaming: false });
+      patchLastMessage(companion.id, { text: fullReply, streaming: false });
       setCompanion({ ...getCompanion(companion.id) });
 
       vibrate(8);
       playTone(680, 0.05, 0.02);
 
       maybeUpdateMemory(companion.id);
-
-      // Fire-and-forget: occasionally summarize the conversation into long-term memory.
-      maybeUpdateMemory(companion.id);
     } finally {
       setSending(false);
     }
+  };
+
+  const send = () => sendMessage({ text: input.trim(), image: pendingImage });
+
+  const startRecording = async () => {
+    if (!isRecordingSupported()) return;
+    try {
+      recorderRef.current = createRecorder();
+      await recorderRef.current.start();
+      setRecording(true);
+      vibrate(15);
+    } catch (e) {
+      setRecording(false);
+    }
+  };
+
+  const stopRecordingAndSend = async () => {
+    if (!recorderRef.current) return;
+    setRecording(false);
+    const blob = await recorderRef.current.stop();
+    recorderRef.current = null;
+    if (!blob || blob.size < 500) return;
+
+    setTranscribing(true);
+    try {
+      const { text, audioDataUrl } = await transcribeAudio(blob);
+      await sendMessage({ text: text || '', audio: audioDataUrl });
+    } finally {
+      setTranscribing(false);
+    }
+  };
+
+  const cancelRecording = () => {
+    if (recorderRef.current) {
+      recorderRef.current.cancel();
+      recorderRef.current = null;
+    }
+    setRecording(false);
   };
 
   const messages = companion.messages || [];
@@ -158,7 +242,6 @@ export default function Chat() {
         </div>
       )}
 
-      {/* Header */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 12, padding: '18px 20px 14px',
         borderBottom: '1px solid var(--border)', background: 'var(--bg)',
@@ -174,7 +257,6 @@ export default function Chat() {
         <button onClick={() => navigate(`/companions/${companion.id}`)} style={{ fontSize: 20, color: 'var(--ink-soft)', padding: 6 }}>⋯</button>
       </div>
 
-      {/* Messages */}
       <div ref={scrollRef} className="scroll-area" style={{ padding: '20px 18px', display: 'flex', flexDirection: 'column', gap: 18 }}>
         {messages.length === 0 && (
           <div style={{ textAlign: 'center', marginTop: '30vh', padding: '0 20px' }}>
@@ -190,6 +272,18 @@ export default function Chat() {
                 alt="attachment"
                 style={{ maxWidth: '70%', borderRadius: 16, marginBottom: 6 }}
               />
+            )}
+            {m.audio && (
+              <div style={{
+                maxWidth: '80%',
+                background: m.role === 'user' ? 'var(--bubble-user)' : 'var(--bubble-assistant)',
+                border: m.role === 'assistant' ? '1px solid var(--border)' : 'none',
+                borderRadius: 20,
+                padding: '12px 16px',
+                marginBottom: m.text ? 6 : 0,
+              }}>
+                <AudioBubble src={m.audio} />
+              </div>
             )}
             {(m.text || m.streaming) && (
               <div style={{
@@ -216,6 +310,16 @@ export default function Chat() {
             </div>
           </div>
         ))}
+        {transcribing && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <div style={{
+              background: 'var(--bubble-user)', borderRadius: 20, padding: '12px 18px',
+              fontSize: 14, color: 'var(--ink-soft)',
+            }}>
+              <em>Transcribing your voice message…</em>
+            </div>
+          </div>
+        )}
       </div>
 
       {pendingImage && (
@@ -237,7 +341,22 @@ export default function Chat() {
         </div>
       )}
 
-      {/* Input */}
+      {recording && (
+        <div style={{
+          position: 'fixed', bottom: 122, left: '50%', transform: 'translateX(-50%)',
+          width: '100%', maxWidth: 480, padding: '0 16px', zIndex: 16,
+          display: 'flex', justifyContent: 'center',
+        }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10, background: 'var(--surface)',
+            border: '1px solid var(--border)', borderRadius: 999, padding: '8px 16px',
+          }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--danger)' }} />
+            <span style={{ fontSize: 13.5, color: 'var(--ink)' }}>Recording… release to send</span>
+          </div>
+        </div>
+      )}
+
       <div style={{
         position: 'fixed', bottom: 68, left: '50%', transform: 'translateX(-50%)',
         width: '100%', maxWidth: 480, padding: '10px 16px',
@@ -259,6 +378,22 @@ export default function Chat() {
             padding: '14px 18px', fontSize: 15, color: 'var(--ink)',
           }}
         />
+        {isRecordingSupported() && (
+          <button
+            onMouseDown={startRecording}
+            onMouseUp={stopRecordingAndSend}
+            onMouseLeave={() => { if (recording) cancelRecording(); }}
+            onTouchStart={(e) => { e.preventDefault(); startRecording(); }}
+            onTouchEnd={(e) => { e.preventDefault(); stopRecordingAndSend(); }}
+            style={{
+              width: 46, height: 46, borderRadius: '50%',
+              background: recording ? 'var(--danger)' : 'var(--surface-2)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}
+          >
+            <MicIcon active={recording} />
+          </button>
+        )}
         <button onClick={send} style={{
           width: 46, height: 46, borderRadius: '50%', background: 'var(--sage-pale)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
