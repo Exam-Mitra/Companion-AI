@@ -2,19 +2,6 @@
 // Converts a companion's reply text into realistic speech using ElevenLabs' free tier
 // (10,000 characters/month, no credit card). Falls back gracefully — the client will use
 // the browser's built-in voice if this isn't configured or the quota runs out.
-//
-// Setup (one-time, free):
-//   1. Sign up free at https://elevenlabs.io (no card needed)
-//   2. Go to the Voice Library, search for an Indian female voice you like
-//      (e.g. "Anvi", "Aarohi", "Sumi" are warm/romantic-toned voices), click it, and
-//      copy its Voice ID from the voice's page (or "My Voices" after adding it).
-//   3. Go to your ElevenLabs profile -> API Keys -> create a key.
-//   4. In Vercel -> Project Settings -> Environment Variables, add:
-//        ELEVENLABS_API_KEY = your key
-//        ELEVENLABS_VOICE_ID = the voice id you copied
-//
-// Until both env vars are set, this endpoint returns { audio: null } and the app
-// automatically falls back to the free browser voice — nothing breaks.
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -38,7 +25,6 @@ export default async function handler(req, res) {
       return;
     }
 
-    // Keep well within the free 10k characters/month budget per request.
     const trimmed = clean.slice(0, 600);
 
     const elevenRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
