@@ -25,7 +25,7 @@ export function uid() {
 
 // ---------- Settings (dark mode, voice preference, notifications) ----------
 const DEFAULT_SETTINGS = {
-  theme: 'light', // 'light' | 'dark'
+  theme: 'light',
   voiceName: null,
   notificationsEnabled: false,
 };
@@ -66,12 +66,11 @@ export function createCompanion({ name, relationship, traits, avatarId }) {
     relationship,
     traits,
     avatarId: avatarId || null,
-    memory: '', // short natural-language summary the AI can use across sessions
+    memory: '',
     active: true,
     createdAt: Date.now(),
     messages: [],
   };
-  // deactivate others
   list.forEach((c) => (c.active = false));
   list.push(companion);
   write(KEYS.companions, list);
@@ -105,6 +104,7 @@ export function updateLastMessage(companionId, text) {
   companion.messages[companion.messages.length - 1].text = text;
   write(KEYS.companions, list);
 }
+
 // Updates one or more fields on the last message at once (e.g. finalizing a streamed
 // reply: set the final text AND clear the `streaming` flag in a single atomic write).
 export function patchLastMessage(companionId, patch) {
@@ -114,6 +114,7 @@ export function patchLastMessage(companionId, patch) {
   Object.assign(companion.messages[companion.messages.length - 1], patch);
   write(KEYS.companions, list);
 }
+
 export function updateCompanion(id, patch) {
   const list = getCompanions();
   const companion = list.find((c) => c.id === id);
@@ -122,7 +123,6 @@ export function updateCompanion(id, patch) {
   write(KEYS.companions, list);
 }
 
-// Update the companion's running "memory" — a short summary the AI uses across sessions.
 export function updateMemory(id, memoryText) {
   updateCompanion(id, { memory: memoryText });
 }
@@ -146,8 +146,6 @@ function isSameDay(a, b) {
   return da.getFullYear() === db.getFullYear() && da.getMonth() === db.getMonth() && da.getDate() === db.getDate();
 }
 
-// Current consecutive-day journaling streak, counting back from today (or yesterday if
-// today hasn't been logged yet, so the streak doesn't reset the moment the clock ticks over).
 export function getJournalStreak() {
   const entries = getJournalEntries();
   if (!entries.length) return 0;
@@ -160,7 +158,6 @@ export function getJournalStreak() {
   let streak = 0;
   let cursor = now;
 
-  // If today isn't logged, start checking from yesterday instead.
   if (!isSameDay(days[0], now)) {
     cursor = now - 86400000;
   }
