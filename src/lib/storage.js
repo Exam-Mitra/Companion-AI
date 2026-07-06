@@ -105,7 +105,15 @@ export function updateLastMessage(companionId, text) {
   companion.messages[companion.messages.length - 1].text = text;
   write(KEYS.companions, list);
 }
-
+// Updates one or more fields on the last message at once (e.g. finalizing a streamed
+// reply: set the final text AND clear the `streaming` flag in a single atomic write).
+export function patchLastMessage(companionId, patch) {
+  const list = getCompanions();
+  const companion = list.find((c) => c.id === companionId);
+  if (!companion || !companion.messages.length) return;
+  Object.assign(companion.messages[companion.messages.length - 1], patch);
+  write(KEYS.companions, list);
+}
 export function updateCompanion(id, patch) {
   const list = getCompanions();
   const companion = list.find((c) => c.id === id);
