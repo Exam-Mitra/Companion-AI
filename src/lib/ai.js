@@ -54,8 +54,6 @@ export async function getCompanionReply(companion, history, userText, opts = {})
 }
 
 // Streaming call — invokes onToken(chunk) as text arrives, resolves with the full text at the end.
-// If streaming fails for any reason (network, older backend, etc.), it transparently falls back
-// to the non-streaming call (and finally to the local offline responder).
 export async function streamCompanionReply(companion, history, userText, { onToken, imageBase64 } = {}) {
   if (!navigator.onLine) {
     const text = localFallback(companion, history, userText);
@@ -114,7 +112,6 @@ export async function streamCompanionReply(companion, history, userText, { onTok
     if (!fullText.trim()) throw new Error('empty stream');
     return fullText;
   } catch (e) {
-    // Streaming failed — fall back to a normal request, then to the offline responder.
     const text = await getCompanionReply(companion, history, userText, { imageBase64 });
     if (onToken) onToken(text);
     return text;
@@ -122,7 +119,7 @@ export async function streamCompanionReply(companion, history, userText, { onTok
 }
 
 // Browser-native, 100% free text-to-speech (no API key, no cost). Used automatically
-// as a fallback if the realistic ElevenLabs voice (below) isn't configured or fails.
+// as a fallback if the realistic ElevenLabs voice isn't configured or fails.
 export function getAvailableVoices() {
   if (!('speechSynthesis' in window)) return [];
   return window.speechSynthesis.getVoices();
@@ -153,7 +150,6 @@ export async function speak(text, voiceName) {
   const clean = (text || '').replace(/\*[^*]*\*/g, '').trim();
   if (!clean) return;
 
-  // Stop anything currently playing.
   if (currentRealisticAudio) {
     currentRealisticAudio.pause();
     currentRealisticAudio = null;
@@ -175,7 +171,6 @@ export async function speak(text, voiceName) {
     }
     throw new Error('no audio');
   } catch (e) {
-    // Realistic voice unavailable — use the free browser voice instead.
     speakWithBrowserVoice(clean, voiceName);
   }
 }
