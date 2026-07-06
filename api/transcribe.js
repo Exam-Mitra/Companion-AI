@@ -30,7 +30,6 @@ export default async function handler(req, res) {
       return;
     }
 
-    // audioBase64 looks like "data:audio/webm;base64,AAAA..."
     const commaIdx = audioBase64.indexOf(',');
     const base64Data = commaIdx >= 0 ? audioBase64.slice(commaIdx + 1) : audioBase64;
     const buffer = Buffer.from(base64Data, 'base64');
