@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import BottomNav from '../components/BottomNav.jsx';
 import Avatar from '../components/Avatar.jsx';
-import { addMessage, getCompanion, getSettings, uid, updateLastMessage, updateMemory } from '../lib/storage.js';
+import { addMessage, getCompanion, getSettings, uid, updateLastMessage, patchLastMessage, updateMemory } from '../lib/storage.js';
 import { streamCompanionReply, speak } from '../lib/ai.js';
 import { maybeUpdateMemory } from '../lib/memory.js';
 
@@ -130,12 +130,13 @@ export default function Chat() {
       const finalList = getCompanion(companion.id);
       const lastMsg = finalList.messages[finalList.messages.length - 1];
       if (lastMsg) { lastMsg.streaming = false; lastMsg.text = fullReply; }
-      // persist finalized message list
-      updateLastMessage(companion.id, fullReply);
+      //       patchLastMessage(companion.id, { text: fullReply, streaming: false });
       setCompanion({ ...getCompanion(companion.id) });
 
       vibrate(8);
       playTone(680, 0.05, 0.02);
+
+      maybeUpdateMemory(companion.id);
 
       // Fire-and-forget: occasionally summarize the conversation into long-term memory.
       maybeUpdateMemory(companion.id);
