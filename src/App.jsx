@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Analytics } from '@vercel/analytics/react';
 import Onboarding from './pages/Onboarding.jsx';
 import Chat from './pages/Chat.jsx';
 import Companions from './pages/Companions.jsx';
@@ -45,15 +46,18 @@ export default function App() {
   useAppliedTheme();
 
   return (
-    <Routes>
-      <Route path="/" element={<HomeRedirect />} />
-      <Route path="/onboarding" element={<Onboarding />} />
-      <Route path="/chat/:id" element={<Chat />} />
-      <Route path="/companions" element={<Companions />} />
-      <Route path="/companions/:id" element={<CompanionDetail />} />
-      <Route path="/journal" element={<Journal />} />
-      <Route path="/settings" element={<Settings />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <>
+      <Routes>
+        <Route path="/" element={<HomeRedirect />} />
+        <Route path="/onboarding" element={<Onboarding />} />
+        <Route path="/chat/:id" element={<Chat />} />
+        <Route path="/companions" element={<Companions />} />
+        <Route path="/companions/:id" element={<CompanionDetail />} />
+        <Route path="/journal" element={<Journal />} />
+        <Route path="/settings" element={<Settings />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+      <Analytics />
+    </>
   );
 }
